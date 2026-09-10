@@ -1,0 +1,39 @@
+[workspace]
+members = ["crates/core", "crates/cli", "crates/app"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "process", "fs", "macros", "io-util", "signal", "test-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+notify = "8.2"
+walkdir = "2"
+glob = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+hostname = "0.4"
+tempfile = "3"
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui = "0.31.1"
+egui_extras = "0.31.1"
+tray-icon = "0.21.3"
+rfd = "0.15.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_System_Power", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

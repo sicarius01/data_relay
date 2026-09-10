@@ -1,0 +1,27 @@
+[package]
+name = "csv-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "csv-agent"
+path = "src/main.rs"
+
+[dependencies]
+csv-agent-core = { path = "../core" }
+anyhow.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+rfd.workspace = true
+image.workspace = true
+raw-window-handle = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+tray-icon.workspace = true

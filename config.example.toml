@@ -1,0 +1,59 @@
+# Copy to config.toml in your data directory, or edit settings in the GUI.
+# Each PC must have a unique equipment number/name combination.
+[equip]
+num = "A-12"
+name = "press01"
+id_separator = "_"
+
+[agent]
+debounce_sec = 3
+max_wait_sec = 180
+spool_dir = "C:/ProgramData/csv-agent/spool"
+spool_max_bytes = 1073741824
+max_chunk_bytes = 8388608
+heartbeat_interval_sec = 300
+autostart = true
+
+[server]
+unc_base = '\\server\share'
+retry_max = 10
+retry_base_ms = 1000
+
+[ui]
+exit_confirm_message = "문제가 있으면 담당자에게 먼저 문의해 주세요."
+
+[[watch]]
+pattern = "D:/logs/**/vib_*.csv"
+header = "auto"
+delimiter = ","
+enabled = true
+
+[[watch]]
+pattern = "C:/app/output/press_*.csv"
+header = "fixed"
+columns = ["ts", "pressure", "temp", "status"]
+delimiter = ","
+enabled = false
+
+[[watch]]
+pattern = "E:/raw/nohdr_*.csv"
+header = "none"
+delimiter = ","
+enabled = false
+
+[[task]]
+name = "collect_data"
+program = "C:/tools/collector.exe"
+args = ["--mode", "full"]
+working_dir = "C:/tools"
+schedule = "hourly"
+timeout_sec = 300
+run_on_start = false
+enabled = false
+# For schedule = "every_n_min": interval_min = 15
+# For schedule = "daily": daily_at = "09:00"
+
+[log]
+level = "info"
+dir = "C:/ProgramData/csv-agent/logs"
+max_files = 14

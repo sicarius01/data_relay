@@ -1,0 +1,17 @@
+/target/
+/.local/
+/.omc/
+/.codex/
+/spool/
+/logs/
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+*.db.corrupt-*
+*.log
+config.toml
+config.toml.bak
+*.tmp
