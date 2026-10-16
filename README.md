@@ -1,6 +1,6 @@
 # CSV 수집 에이전트
 
-Windows에서 CSV 파일의 추가 바이트를 감지해 gzip 조각으로 저장하고 UNC 공유 폴더에 전송하는 Rust 애플리케이션입니다. 구현 기준은 [사양서](csv-agent-spec.md)와 [설계서](csv-agent-design.md)입니다. 서버 적재기와 QuestDB 연동은 이 프로젝트의 범위 밖입니다.
+Windows에서 CSV 파일의 추가 바이트를 감지해 gzip 조각으로 저장하고 UNC 공유 폴더에 전송하는 Rust 애플리케이션입니다. 구현 기준은 [사양서](csv-agent-spec.md)와 [설계서](csv-agent-design.md)입니다. 서버 적재기는 운영용이 아니라 [QuestDB 적재 예제](#서버-적재-예제-questdb)로만 제공합니다.
 
 ## 빌드
 
@@ -89,6 +89,82 @@ cargo run -p csv-agent-cli -- --data-dir .\.local\agent --allow-local-target run
 - 미완료 장비 설정에서는 전송을 보류하고 로컬 수집을 계속합니다. 스풀 용량 상한을 넘으면 사양에 따라 오래된 미전송 조각부터 삭제하며 경고를 남깁니다.
 
 전송 결과는 `{unc_base}/raw/{equip_id}/{YYYYMMDD}/*.csv.gz`, 상태는 `{unc_base}/_status/{equip_id}.json`에 기록됩니다. 조각 날짜는 생성 시점의 로컬 날짜이며, 스풀에 남은 조각의 장비 ID는 전송 시점의 설정을 사용합니다.
+
+## 서버 적재 예제 (QuestDB)
+
+에이전트가 공유 폴더에 올린 조각을 QuestDB에 넣는 Python 예제가 `examples/`에 있습니다.
+
+| 파일 | 내용 |
+|---|---|
+| [examples/load_to_questdb.py](examples/load_to_questdb.py) | 공유 폴더의 조각을 모두 읽어 QuestDB에 적재 (`questdb.ingress.Sender`) |
+| [examples/read_incremental_csv.py](examples/read_incremental_csv.py) | 조각 하나를 읽어 컬럼명과 값을 출력하는 최소 예제 |
+
+### 사용법
+
+Python 3.10 이상이 필요합니다.
+
+```powershell
+pip install "questdb>=2,<4"
+python examples\load_to_questdb.py \\server\share --host 192.168.88.250
+```
+
+| 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `share` (필수) | | 에이전트의 `unc_base`와 같은 공유 루트. 아래에 `raw\`, `_status\`가 있어야 합니다 |
+| `--host`, `--port` | `192.168.88.250`, `9000` | QuestDB HTTP 포트. 데이터 전송(ILP)과 테이블 생성(SQL)에 같이 씁니다 |
+| `--table` | `csv_edge_values` | 적재할 테이블. 없으면 만듭니다 |
+| `--state` | `loaded_chunks.txt` | 적재가 끝난 조각 목록. 다음 실행 때 이 조각은 건너뜁니다 |
+| `--tz-offset` | `+09:00` | 시간대가 없는 타임스탬프를 해석할 UTC 오프셋 |
+
+새 조각이 계속 쌓이므로 작업 스케줄러 등으로 주기 실행하면 됩니다. 실행할 때마다 `--state`에 없는 조각만 넣습니다. 같은 조각을 다시 넣어도 테이블의 중복 제거 키가 흡수하므로, 전체를 다시 넣고 싶으면 `--state` 파일을 지우고 실행하세요.
+
+### 적재 형식
+
+CSV 한 행(타임스탬프 + 데이터 N개)을 데이터 컬럼마다 한 행씩, N행으로 풀어서 넣습니다.
+
+| 컬럼 | 타입 | 값 |
+|---|---|---|
+| `timestamp` | TIMESTAMP | CSV 행의 시각 (UTC로 저장) |
+| `EQUIP_NUM`, `EQUIP_NAME` | SYMBOL | 에이전트 전역 설정의 장비 번호·장비 이름. 하트비트 `_status\{equip_id}.json`에서 읽습니다 |
+| `filename` | SYMBOL | 원본 CSV 파일 이름(확장자 포함, 하위 폴더 제외) |
+| `colname` | SYMBOL | CSV 컬럼 이름. 헤더 없는 파일은 `c0`, `c1`, … |
+| `value_int` / `value_float` / `value_str` | LONG / DOUBLE / VARCHAR | 정수 → `value_int`, 실수 → `value_float`, 나머지(빈 값 포함) → `value_str`. 셋 중 하나만 채워집니다 |
+
+- 테이블은 `PARTITION BY DAY WAL`이며 `DEDUP UPSERT KEYS(timestamp, EQUIP_NUM, EQUIP_NAME, filename, colname)`로 중복을 흡수합니다.
+- 타임스탬프 컬럼은 이름이 `timestamp`, `time`, `ts`, `datetime` 등인 컬럼이고, 없으면 첫 컬럼입니다. `2026-10-16 09:00:00.123`, `2026/10/16 09:00:00`, ISO 8601 형식을 읽습니다.
+- 하트비트가 아직 없는 장비의 조각은 건너뛰고 다음 실행 때 다시 시도합니다. 깨진 조각은 오류를 출력하고 넣지 않으며, 나머지 조각은 계속 넣습니다.
+- 주의: 같은 장비에서 하위 폴더만 다르고 이름이 같은 파일(`LineA\Vib_001.CSV`, `LineB\Vib_001.CSV`)의 같은 시각 값은 중복 제거 때문에 서로 덮어씁니다. 같은 파일 안에서 같은 시각의 행이 두 번 나와도 하나로 합쳐집니다. `007` 같은 코드는 정수 `7`로 들어갑니다.
+
+조회 예 (원래 CSV 모양으로 펼치기, 한국 시간):
+
+```sql
+SELECT to_timezone(timestamp, 'Asia/Seoul') AS kst,
+       max(CASE WHEN colname = 'ch1' THEN value_int END)   AS ch1,
+       max(CASE WHEN colname = 'ch2' THEN value_float END) AS ch2
+FROM csv_edge_values
+WHERE EQUIP_NUM = 'A-12' AND filename = 'Vib_001.CSV'
+GROUP BY timestamp
+ORDER BY timestamp;
+```
+
+### 바꾸거나 교체하려면
+
+| 바꿀 것 | 고칠 곳 (`examples/load_to_questdb.py`) |
+|---|---|
+| QuestDB 주소·테이블 이름 | `--host`, `--port`, `--table` 옵션 (코드 수정 불필요) |
+| 테이블 구조·파티션·중복 제거 키 | `TABLE_DDL` |
+| 정수·실수·문자열 판정 규칙 (예: `007`을 문자열로 유지) | `classify()` |
+| 타임스탬프 컬럼 이름 후보 | `TIMESTAMP_NAMES` |
+| 타임스탬프 형식 (예: epoch 숫자) | `parse_timestamp()` |
+| 파일 이름에 하위 폴더 포함 | `source_filename()` |
+
+- **테이블 구조를 바꿀 때**: `CREATE TABLE IF NOT EXISTS`라서 이미 있는 테이블은 바뀌지 않습니다. 기존 테이블을 지우거나(`DROP TABLE csv_edge_values;`) `--table`로 새 이름을 지정한 뒤, `--state` 파일을 지우고 다시 실행하세요.
+- **다른 DB나 다른 적재 프로그램으로 교체할 때**: 에이전트는 바꿀 필요가 없습니다. 새 프로그램은 다음 계약만 지키면 됩니다.
+  1. 공유 폴더의 `raw\{equip_id}\{YYYYMMDD}\*.csv.gz`만 읽습니다. 에이전트가 `.tmp`로 쓴 뒤 이름을 바꾸므로 `.tmp` 파일은 무시합니다.
+  2. 파일 이름은 오른쪽부터 `__`로 두 번 나눕니다: `{원본 이름 세그먼트}__{시작}-{끝 offset}__{hdr|syn}.csv.gz`. 원본 이름 세그먼트의 `~`는 하위 폴더 구분자이고, `%7e`는 `~`, `%25`는 `%`입니다. 끝에 붙는 `~g숫자-16진수`(파일 재생성), `~c16진수`(이름 충돌)는 원본 이름이 아닙니다.
+  3. 조각의 첫 줄은 항상 헤더입니다. `hdr`는 원본 헤더, `syn`은 에이전트가 만든 `c0,c1,…` 헤더입니다.
+  4. 같은 조각이 두 번 올 수 있으므로(최소 한 번 전송) DB 쪽에서 중복을 흡수해야 합니다.
+  5. 장비 번호·이름은 `_status\{equip_id}.json`의 `equip_num`, `equip_name`을 씁니다.
 
 ## 구현 시 보완한 사항
 
