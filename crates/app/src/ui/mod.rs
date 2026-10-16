@@ -424,10 +424,15 @@ impl eframe::App for AgentApp {
                 }
                 ui.label(&self.notice);
             });
-            ui.small(format!(
-                "설정: {} · 창을 닫으면 트레이에서 계속 실행됩니다.",
-                self.paths.config.display()
-            ));
+            ui.horizontal(|ui| {
+                ui.small(format!(
+                    "설정: {} · 창을 닫으면 트레이에서 계속 실행됩니다.",
+                    self.paths.config.display()
+                ));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("made by PHS").small().weak());
+                });
+            });
             ui.add_space(6.0);
         });
         egui::CentralPanel::default().show(context, |ui| {

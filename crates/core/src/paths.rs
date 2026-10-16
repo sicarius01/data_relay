@@ -42,32 +42,38 @@ impl std::fmt::Display for NormPath {
         self.0.fmt(f)
     }
 }
-fn normalized_text(s: &str) -> String {
+/// Separator and prefix cleanup only; keeps the original case for display and chunk names.
+fn cleaned_text(s: &str) -> String {
     let s = s.replace('\\', "/");
     let s = if let Some(s) = s.strip_prefix("//?/UNC/") {
         format!("//{s}")
     } else {
         s.strip_prefix("//?/").unwrap_or(&s).to_owned()
     };
-    let lower = s.to_lowercase();
-    if lower.len() > 3 {
-        lower.trim_end_matches('/').to_owned()
+    if s.len() > 3 {
+        s.trim_end_matches('/').to_owned()
     } else {
-        lower
+        s
     }
 }
-pub fn normalize(p: &Path) -> NormPath {
+fn normalized_text(s: &str) -> String {
+    cleaned_text(s).to_lowercase()
+}
+fn absolute_text(p: &Path) -> String {
     let s = p.to_string_lossy();
     let absolute =
         s.starts_with('/') || s.starts_with('\\') || (s.as_bytes().get(1) == Some(&b':'));
-    NormPath(normalized_text(&if absolute {
+    if absolute {
         s.into_owned()
     } else {
         std::path::absolute(p)
             .unwrap_or_else(|_| p.to_path_buf())
             .to_string_lossy()
             .into_owned()
-    }))
+    }
+}
+pub fn normalize(p: &Path) -> NormPath {
+    NormPath(normalized_text(&absolute_text(p)))
 }
 pub fn invalid_filename_char(c: char) -> bool {
     c.is_control() || "\\/:*?\"<>|".contains(c)
@@ -146,10 +152,21 @@ impl CompiledPattern {
     }
     pub fn name_segment(&self, path: &Path) -> String {
         let p = normalize(path).0;
+        // Match the prefix case-insensitively, but keep the source file's own case in the name.
+        let shown = cleaned_text(&absolute_text(path));
         let root = normalize(&self.prefix).0;
-        let rel = p
-            .strip_prefix(&(root.trim_end_matches('/').to_owned() + "/"))
-            .unwrap_or(&p);
+        let root_parts: Vec<&str> = root.trim_end_matches('/').split('/').collect();
+        let parts: Vec<&str> = shown.split('/').collect();
+        let under_root = parts.len() > root_parts.len()
+            && root_parts
+                .iter()
+                .zip(&parts)
+                .all(|(r, s)| s.to_lowercase() == *r);
+        let rel = if under_root {
+            parts[root_parts.len()..].join("/")
+        } else {
+            shown.clone()
+        };
         // Escape literal '~' to keep nested paths distinguishable from filenames containing '~'.
         let mut name = rel
             .replace('%', "%25")
@@ -239,6 +256,27 @@ mod tests {
         assert_ne!(
             p.name_segment(Path::new("D:/logs/a~b.csv")),
             p.name_segment(Path::new("D:/logs/a%7eb.csv"))
+        );
+    }
+    #[test]
+    fn name_segment_keeps_original_case() {
+        let p = CompiledPattern::new(&WatchConfig {
+            pattern: "D:/Logs/**/*.csv".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            p.name_segment(Path::new(r"d:\LOGS\LineA\Vib_001.CSV")),
+            "LineA~Vib_001.CSV"
+        );
+        let unc = CompiledPattern::new(&WatchConfig {
+            pattern: "//Server/Share/*.csv".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            unc.name_segment(Path::new(r"\\?\UNC\SERVER\share\Data_A.csv")),
+            "Data_A.csv"
         );
     }
     #[test]

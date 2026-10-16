@@ -155,7 +155,8 @@ impl StateDb {
         if let Some(name) = existing {
             return Ok(name);
         }
-        let owner = format!("name_owner:{base}");
+        // Windows shares are case-insensitive, so ownership is keyed by the lowercased name.
+        let owner = format!("name_owner:{}", base.to_lowercase());
         let generation: Option<String> = tx
             .query_row("SELECT value FROM meta WHERE key=?1", [&owner], |r| {
                 r.get(0)
@@ -192,7 +193,7 @@ impl StateDb {
             })
             .optional()?;
         let base = base.unwrap_or_else(|| row.name_seg.clone());
-        let owner = format!("name_owner:{base}");
+        let owner = format!("name_owner:{}", base.to_lowercase());
         let generation: Option<String> = tx
             .query_row("SELECT value FROM meta WHERE key=?1", [&owner], |r| {
                 r.get(0)
@@ -338,6 +339,19 @@ mod tests {
             db.allocate_name("data.csv", "key2", "c:/data.csv").unwrap(),
             second
         );
+    }
+    #[test]
+    fn names_differing_only_in_case_do_not_collide() {
+        let d = tempfile::tempdir().unwrap();
+        let db = StateDb::open(&d.path().join("state.db")).unwrap();
+        let first = db
+            .allocate_name("Data.csv", "key1", "c:/a/data.csv")
+            .unwrap();
+        assert_eq!(first, "Data.csv");
+        let second = db
+            .allocate_name("data.CSV", "key2", "c:/b/data.csv")
+            .unwrap();
+        assert_ne!(second.to_lowercase(), first.to_lowercase());
     }
     #[test]
     fn corruption_recovery_and_task_retention() {
