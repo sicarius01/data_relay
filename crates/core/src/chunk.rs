@@ -53,6 +53,12 @@ pub fn process_file(db: &StateDb, spool: &Spool, config: &Config, path: &Path) -
             last_error: None,
         }
     };
+    let fresh = pattern.name_segment(path);
+    if let Some(upgraded) = crate::paths::case_upgraded(&row.name_seg, &fresh) {
+        tracing::info!(old=%row.name_seg,new=%upgraded,"chunk name now keeps the source case");
+        db.rename_source(&row.file_key, &norm, &upgraded, &fresh)?;
+        row.name_seg = upgraded;
+    }
     row.path = norm;
     row.display_path = path.to_string_lossy().into();
     row.last_seen = now;
@@ -334,6 +340,47 @@ mod tests {
         crate::win::replace_file(&replacement, &p).unwrap();
         process_file(&db, &s, &c, &p).unwrap();
         assert_eq!(s.stats().unwrap().pending, 2);
+    }
+    #[test]
+    fn legacy_lowercase_names_upgrade_to_source_case() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("Data_A.CSV");
+        let config = Config {
+            watch: vec![crate::config::WatchConfig {
+                pattern: p.to_string_lossy().into(),
+                header: HeaderMode::None,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let db = StateDb::open(&d.path().join("state.db")).unwrap();
+        let s = Spool::new(d.path().join("spool")).unwrap();
+        std::fs::write(&p, b"1\n").unwrap();
+        let key = crate::win::file_key(&File::open(&p).unwrap()).unwrap();
+        // What a build before the case fix stored for this file.
+        db.allocate_name("data_a.csv", &key, &normalize(&p).0)
+            .unwrap();
+        process_file(&db, &s, &config, &p).unwrap();
+        File::options()
+            .append(true)
+            .open(&p)
+            .unwrap()
+            .write_all(b"2\n")
+            .unwrap();
+        process_file(&db, &s, &config, &p).unwrap();
+        db.reset_offset(&key).unwrap();
+        process_file(&db, &s, &config, &p).unwrap();
+        let names: Vec<String> = s
+            .list_oldest_first()
+            .unwrap()
+            .into_iter()
+            .map(|i| i.name)
+            .collect();
+        assert_eq!(names.len(), 3, "{names:?}");
+        assert!(
+            names.iter().all(|n| n.starts_with("Data_A.CSV__")),
+            "{names:?}"
+        );
     }
     #[test]
     fn chunks_split_at_newlines_and_keep_partial_tail() {

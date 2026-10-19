@@ -188,6 +188,16 @@ impl CompiledPattern {
         name
     }
 }
+/// Builds before the case fix stored lowercased names. Returns the stored name with its
+/// lowercased base replaced by the source-case base, keeping any `~g…`/`~c…` suffix.
+pub fn case_upgraded(stored: &str, fresh: &str) -> Option<String> {
+    let lower = fresh.to_lowercase();
+    if stored != stored.to_lowercase() || lower == fresh {
+        return None;
+    }
+    let rest = stored.strip_prefix(&lower)?;
+    (rest.is_empty() || rest.starts_with('~')).then(|| format!("{fresh}{rest}"))
+}
 pub fn stable_hash(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf29ce484222325u64, |a, b| {
         (a ^ u64::from(*b)).wrapping_mul(0x100000001b3)
@@ -278,6 +288,22 @@ mod tests {
             unc.name_segment(Path::new(r"\\?\UNC\SERVER\share\Data_A.csv")),
             "Data_A.csv"
         );
+    }
+    #[test]
+    fn legacy_lowercase_names_are_upgraded() {
+        assert_eq!(
+            case_upgraded("linea~vib.csv", "LineA~Vib.CSV").as_deref(),
+            Some("LineA~Vib.CSV")
+        );
+        assert_eq!(
+            case_upgraded("vib.csv~g1-00000000000000ab", "Vib.CSV").as_deref(),
+            Some("Vib.CSV~g1-00000000000000ab")
+        );
+        // Already in source case, all-lowercase sources, and unrelated names stay.
+        assert_eq!(case_upgraded("Vib.CSV", "Vib.CSV"), None);
+        assert_eq!(case_upgraded("vib.csv", "vib.csv"), None);
+        assert_eq!(case_upgraded("other.csv", "Vib.CSV"), None);
+        assert_eq!(case_upgraded("vib.csvx", "Vib.CSV"), None);
     }
     #[test]
     fn extended_unc() {

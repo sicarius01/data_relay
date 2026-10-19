@@ -183,6 +183,26 @@ impl StateDb {
         tx.commit()?;
         Ok(name)
     }
+    /// Records a case-upgraded name so later lookups and generations use it.
+    pub fn rename_source(&self, file_key: &str, path: &str, name: &str, base: &str) -> Result<()> {
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction()?;
+        for (key, value) in [
+            (format!("source_name:{file_key}:{path}"), name),
+            (format!("source_base:{file_key}:{path}"), base),
+        ] {
+            tx.execute(
+                "UPDATE meta SET value=?2 WHERE key=?1",
+                [key.as_str(), value],
+            )?;
+        }
+        tx.execute(
+            "UPDATE progress SET name_seg=?2 WHERE file_key=?1",
+            [file_key, name],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
     pub fn rotate_name(&self, row: &ProgressRow) -> Result<String> {
         let mut c = self.conn.lock().unwrap();
         let tx = c.transaction()?;
