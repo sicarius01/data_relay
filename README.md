@@ -1,4 +1,4 @@
-# CSV 수집 에이전트
+# data_relay (CSV 수집 에이전트)
 
 Windows에서 CSV 파일의 추가 바이트를 감지해 gzip 조각으로 저장하고 UNC 공유 폴더에 전송하는 Rust 애플리케이션입니다. 구현 기준은 [사양서](csv-agent-spec.md)와 [설계서](csv-agent-design.md)입니다. 서버 적재기는 운영용이 아니라 [QuestDB 적재 예제](#서버-적재-예제-questdb)로만 제공합니다.
 
@@ -9,19 +9,21 @@ Windows x64, Rust 1.93 이상 MSVC 도구 체인과 Visual Studio C++ Build Tool
 ```powershell
 cargo build --workspace
 cargo test --workspace
-cargo build --release -p csv-agent -p csv-agent-cli
+cargo build --release -p data_relay -p data_relay_cli
 ```
 
-배포 실행 파일은 `target/release/csv-agent.exe`, 콘솔 검증 도구는 `target/release/csv-agent-cli.exe`입니다. `Cargo.lock`을 함께 관리해 같은 의존성 버전으로 빌드합니다.
+배포 실행 파일은 `target/release/data_relay.exe`, 콘솔 검증 도구는 `target/release/data_relay_cli.exe`입니다. `Cargo.lock`을 함께 관리해 같은 의존성 버전으로 빌드합니다.
+
+이전 이름은 `csv-agent.exe`였습니다. 이미 설치된 PC와 호환되도록 데이터 폴더(`%ProgramData%\csv-agent`), 자동 시작 등록 이름(`csv-agent`), 중복 실행 방지 이름은 그대로 씁니다. 그래서 `data_relay.exe`로 교체해도 기존 설정과 전송 기록을 그대로 이어 쓰고, 첫 실행 때 자동 시작 경로가 새 실행 파일로 바뀝니다. 옛 실행 파일은 트레이에서 종료한 뒤 지우세요.
 
 ## 실행
 
 ```powershell
 # 트레이 앱. 설정이 미완료이면 설정 창이 열립니다.
-.\target\release\csv-agent.exe
+.\target\release\data_relay.exe
 
 # 별도 데이터 디렉토리로 실행하고 설정 창 표시
-.\target\release\csv-agent.exe --data-dir .\.local\agent --show
+.\target\release\data_relay.exe --data-dir .\.local\agent --show
 ```
 
 첫 실행 때 데이터 폴더에 `config.toml`을 생성합니다. 장비 번호·장비 이름·UNC 경로·감시 패턴을 입력하세요. 장비 번호와 이름의 조합은 PC마다 달라야 합니다. 설정 파일 위치와 복사 방법은 아래를 참고하세요.
@@ -56,17 +58,17 @@ GUI는 전역 설정, 주기 명령 실행, 파일 감시/전송의 세 탭으�
 4. 파일을 수정해 **장비번호·장비이름 조합이 다른 PC와 중복되지 않도록** 변경하고, UNC 경로·감시 경로·명령 실행 경로·스풀 및 로그 경로를 해당 PC에 맞춥니다.
 5. 프로그램을 실행하면 복사하거나 수정한 설정을 읽습니다. 이후 앱에서 수정할 때는 **저장 및 적용**을 누르세요.
 
-실행 중 파일을 직접 수정한 내용은 자동으로 다시 읽지 않으므로, 파일 편집은 프로그램을 종료한 상태에서 하고 다시 실행하세요. `config.toml`에는 설정만 들어 있습니다. 전송 진행 상태·실행 이력과 미전송 파일은 설정 파일 복사에 포함되지 않습니다.
+실행 중 파일을 직접 수정한 내용은 자동으로 다시 읽지 않습니다. 파일을 고친 뒤 화면 아래의 **파일에서 다시 읽기**를 누르면 `config.toml`을 다시 읽어 바로 적용합니다. 화면에서 저장하지 않은 변경이 있으면 사라진다는 확인 창이 먼저 뜹니다. 파일이 없거나 형식이 깨졌으면 현재 설정을 유지하고 오류를 보여 줍니다. 값에 오류가 있으면 화면에만 불러오고 적용하지 않으니, 고친 뒤 **저장 및 적용**을 누르세요. 스풀 경로·로그 경로·로그 보관 개수는 다시 읽어도 재시작 후 반영됩니다. `config.toml`에는 설정만 들어 있습니다. 전송 진행 상태·실행 이력과 미전송 파일은 설정 파일 복사에 포함되지 않습니다.
 
 ## 콘솔 검증
 
 ```powershell
-cargo run -p csv-agent-cli -- --data-dir .\.local\agent check-config
-cargo run -p csv-agent-cli -- scan --pattern 'D:/logs/**/*.csv'
-cargo run -p csv-agent-cli -- chunk-name --parse 'data.csv__0-1024__hdr.csv.gz'
-cargo run -p csv-agent-cli -- test-unc --base '\\server\share'
-cargo run -p csv-agent-cli -- --data-dir .\.local\agent run --dry-run
-cargo run -p csv-agent-cli -- --data-dir .\.local\agent run
+cargo run -p data_relay_cli -- --data-dir .\.local\agent check-config
+cargo run -p data_relay_cli -- scan --pattern 'D:/logs/**/*.csv'
+cargo run -p data_relay_cli -- chunk-name --parse 'data.csv__0-1024__hdr.csv.gz'
+cargo run -p data_relay_cli -- test-unc --base '\\server\share'
+cargo run -p data_relay_cli -- --data-dir .\.local\agent run --dry-run
+cargo run -p data_relay_cli -- --data-dir .\.local\agent run
 ```
 
 `run`은 Ctrl+C로 정상 종료합니다. 자동 검증에서는 `run --duration-sec 10`처럼 실행 시간을 지정할 수 있습니다. `--dry-run`은 감시·디바운스 이벤트를 로그로 확인하는 용도입니다.
@@ -74,7 +76,7 @@ cargo run -p csv-agent-cli -- --data-dir .\.local\agent run
 실제 공유 폴더 없이 시험하려면 설정의 `server.unc_base`를 임시 로컬 절대경로로 지정하고 CLI에 `--allow-local-target`을 추가하세요. GUI의 운영 설정 검증은 UNC 경로만 허용합니다.
 
 ```powershell
-cargo run -p csv-agent-cli -- --data-dir .\.local\agent --allow-local-target run --duration-sec 10
+cargo run -p data_relay_cli -- --data-dir .\.local\agent --allow-local-target run --duration-sec 10
 ```
 
 ## 데이터 처리
@@ -87,6 +89,15 @@ cargo run -p csv-agent-cli -- --data-dir .\.local\agent --allow-local-target run
 - 로컬 `.tmp` 쓰기·동기화·rename 완료 후 offset을 커밋합니다. 전송도 대상 `.tmp`에 쓴 뒤 최종 이름으로 교체합니다.
 - 전송 실패 시 지수 백오프 후 대기합니다. 수동 전송·새 조각·설정 변경·하트비트 성공·절전 복귀가 재시도를 깨웁니다.
 - 미완료 장비 설정에서는 전송을 보류하고 로컬 수집을 계속합니다. 스풀 용량 상한을 넘으면 사양에 따라 오래된 미전송 조각부터 삭제하며 경고를 남깁니다.
+
+### 다시 전송하기 (offset 초기화)
+
+에이전트는 파일마다 전송한 위치(offset)를 로컬 `state.db`에 기록하고, 공유 폴더에 올린 조각이 남아 있는지는 확인하지 않습니다. 공유 폴더나 스풀의 조각을 지워도 자동으로 다시 보내지 않습니다. 다시 보내려면 **파일 감시 및 전송** 탭의 **감시 파일** 표에서 초기화합니다.
+
+- 각 행의 **offset 리셋**: 그 파일만 처음부터 다시 업로드합니다. 원본 파일을 찾지 못한 행은 비활성입니다.
+- 표 아래 **전체 offset 리셋…**: 현재 있는 감시 파일 전부를 처음부터 다시 업로드합니다.
+
+둘 다 확인 창을 거칩니다. 다시 만든 조각은 이전과 같은 파일 이름으로 **다시 만든 날짜의 폴더**(`{YYYYMMDD}`)에 올라가며, 같은 폴더에 같은 이름이 있으면 덮어씁니다. 이미 적재한 데이터는 QuestDB 적재 예제의 중복 제거 키가 흡수합니다. 단, 같은 날 다시 보낸 조각은 적재 예제의 `--state` 파일에 이미 기록된 경로라 건너뛰므로, 적재까지 다시 하려면 해당 줄이나 파일을 지우세요.
 
 전송 결과는 `{unc_base}/raw/{equip_id}/{YYYYMMDD}/*.csv.gz`, 상태는 `{unc_base}/_status/{equip_id}.json`에 기록됩니다. 조각 날짜는 생성 시점의 로컬 날짜이며, 스풀에 남은 조각의 장비 ID는 전송 시점의 설정을 사용합니다.
 

@@ -5,7 +5,7 @@ mod platform;
 mod tray;
 mod ui;
 
-use csv_agent_core::{
+use data_relay_core::{
     config::{self, Config, ConfigLoad},
     paths::AppPaths,
 };
@@ -15,7 +15,7 @@ fn main() -> std::process::ExitCode {
     // The output viewer is a child console, not a second tray application.
     // Handle it before instance locks, config loading, and autostart changes.
     if std::env::args().nth(1).as_deref() == Some("--task-console-viewer") {
-        return match csv_agent_core::win::console_viewer::run() {
+        return match data_relay_core::win::console_viewer::run() {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("테스트 출력 창 오류: {error:#}");
@@ -24,10 +24,10 @@ fn main() -> std::process::ExitCode {
         };
     }
     if let Err(error) = run() {
-        let message = format!("CSV 수집 에이전트를 시작하지 못했습니다.\n\n{error:#}");
+        let message = format!("data_relay를 시작하지 못했습니다.\n\n{error:#}");
         eprintln!("{message}");
         rfd::MessageDialog::new()
-            .set_title("CSV 수집 에이전트")
+            .set_title("data_relay")
             .set_description(message)
             .set_level(rfd::MessageLevel::Error)
             .show();
@@ -86,7 +86,7 @@ fn run() -> anyhow::Result<()> {
     if !["trace", "debug", "info", "warn", "error"].contains(&log_config.level.as_str()) {
         log_config.level = "info".into();
     }
-    let _logging = csv_agent_core::logging::init(&log_config)?;
+    let _logging = data_relay_core::logging::init(&log_config)?;
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         "starting tray application"
@@ -94,14 +94,14 @@ fn run() -> anyhow::Result<()> {
     let visible = show || startup_error.is_some() || !config.validate().is_empty();
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("CSV 수집 에이전트")
+            .with_title("data_relay")
             .with_inner_size([1080.0, 800.0])
             .with_min_inner_size([800.0, 600.0])
             .with_visible(visible),
         ..Default::default()
     };
     eframe::run_native(
-        "CSV 수집 에이전트",
+        "data_relay",
         native_options,
         Box::new(move |cc| {
             sink.attach(cc.egui_ctx.clone());
@@ -116,13 +116,13 @@ fn run() -> anyhow::Result<()> {
             }
             install_korean_font(&cc.egui_ctx);
             let wake = sink.clone();
-            let handle = csv_agent_core::runtime::start(
+            let handle = data_relay_core::runtime::start(
                 config.clone(),
                 paths.clone(),
                 Arc::new(move || wake.wake()),
             )?;
             if let Some(error) = startup_error {
-                let _ = handle.send(csv_agent_core::bus::Command::ConfigError(error));
+                let _ = handle.send(data_relay_core::bus::Command::ConfigError(error));
             }
             Ok(Box::new(ui::AgentApp::new(
                 handle, config, paths, visible, sink, instance,

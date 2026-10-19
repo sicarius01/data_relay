@@ -1,4 +1,4 @@
-use csv_agent_core::{
+use data_relay_core::{
     config::{self, Config, TaskConfig, WatchConfig},
     state::StateDb,
 };
@@ -8,7 +8,7 @@ use std::{
 };
 
 fn cli(args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_csv-agent-cli"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_data_relay_cli"));
     command.args(args);
     #[cfg(windows)]
     {

@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use csv_agent_core::{
+use data_relay_core::{
     config::{self, Config, ConfigLoad},
     paths::AppPaths,
 };
@@ -55,7 +55,7 @@ enum Action {
 fn main() -> std::process::ExitCode {
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--task-console-viewer"))
     {
-        return match csv_agent_core::win::console_viewer::run() {
+        return match data_relay_core::win::console_viewer::run() {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("test console: {error:#}");
@@ -75,14 +75,14 @@ fn main() -> std::process::ExitCode {
 fn execute(args: Args) -> Result<()> {
     match &args.command {
         Action::Scan { pattern } => {
-            for path in csv_agent_core::watch::scan(pattern)? {
+            for path in data_relay_core::watch::scan(pattern)? {
                 println!("{}", path.display());
             }
             return Ok(());
         }
         Action::ChunkName { parse } => {
-            let name =
-                csv_agent_core::paths::parse_chunk_name(parse).context("invalid chunk filename")?;
+            let name = data_relay_core::paths::parse_chunk_name(parse)
+                .context("invalid chunk filename")?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -94,7 +94,7 @@ fn execute(args: Args) -> Result<()> {
         }
         Action::TestUnc { base: Some(base) } => {
             check_target(base, args.allow_local_target)?;
-            csv_agent_core::upload::test_unc(base)?;
+            data_relay_core::upload::test_unc(base)?;
             println!("Connection test succeeded: {base}");
             return Ok(());
         }
@@ -124,7 +124,7 @@ fn execute(args: Args) -> Result<()> {
     };
     if matches!(args.command, Action::TestUnc { .. }) {
         check_target(&config.server.unc_base, args.allow_local_target)?;
-        csv_agent_core::upload::test_unc(&config.server.unc_base)?;
+        data_relay_core::upload::test_unc(&config.server.unc_base)?;
         println!("Connection test succeeded: {}", config.server.unc_base);
         return Ok(());
     }
@@ -168,7 +168,7 @@ fn execute(args: Args) -> Result<()> {
     for error in &errors {
         eprintln!("warning: {error}");
     }
-    let _logging = csv_agent_core::logging::init(&config.log)?;
+    let _logging = data_relay_core::logging::init(&config.log)?;
     let Action::Run {
         dry_run,
         duration_sec,
@@ -177,9 +177,9 @@ fn execute(args: Args) -> Result<()> {
         unreachable!()
     };
     let handle = if dry_run {
-        csv_agent_core::runtime::start_dry_run(config, paths, Arc::new(|| {}))?
+        data_relay_core::runtime::start_dry_run(config, paths, Arc::new(|| {}))?
     } else {
-        csv_agent_core::runtime::start(config, paths, Arc::new(|| {}))?
+        data_relay_core::runtime::start(config, paths, Arc::new(|| {}))?
     };
     println!(
         "Agent started{}. Press Ctrl+C to stop.",

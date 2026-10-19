@@ -1,5 +1,5 @@
 use crate::events::{EventSink, UiEvent};
-use csv_agent_core::bus::StatusSnapshot;
+use data_relay_core::bus::StatusSnapshot;
 
 #[cfg(windows)]
 pub struct Tray {
@@ -55,7 +55,7 @@ impl Tray {
         }));
         let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip("CSV 수집 에이전트")
+            .with_tooltip("data_relay")
             .with_icon(make_icon([35, 169, 114])?)
             .build()?;
         Ok(Self {
@@ -84,7 +84,7 @@ impl Tray {
             .map(|t| t.format("%H:%M").to_string())
             .unwrap_or_else(|| "없음".into());
         let tooltip = format!(
-            "{} · 마지막 전송 {} · 대기 {}건",
+            "data_relay · {} · 마지막 전송 {} · 대기 {}건",
             snapshot.equip_id.as_deref().unwrap_or("설정 필요"),
             last,
             snapshot.spool_pending

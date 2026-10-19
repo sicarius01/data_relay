@@ -780,12 +780,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "csv-agent"
+name = "cursor-icon"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+
+[[package]]
+name = "data_relay"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "csv-agent-core",
+ "data_relay_core",
  "eframe",
  "egui",
  "egui_extras",
@@ -800,13 +806,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv-agent-cli"
+name = "data_relay_cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "csv-agent-core",
+ "data_relay_core",
  "flate2",
  "serde_json",
  "tempfile",
@@ -816,7 +822,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv-agent-core"
+name = "data_relay_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -839,12 +845,6 @@ dependencies = [
  "walkdir",
  "windows 0.61.3",
 ]
-
-[[package]]
-name = "cursor-icon"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "deranged"

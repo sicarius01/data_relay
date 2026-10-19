@@ -1,5 +1,5 @@
 use super::*;
-use csv_agent_core::config::{ScheduleKind, TaskConfig};
+use data_relay_core::config::{ScheduleKind, TaskConfig};
 
 impl AgentApp {
     fn select_task(&mut self, index: usize) {

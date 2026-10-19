@@ -103,7 +103,7 @@ mod native {
     }
 
     struct ResumeContext {
-        sender: tokio::sync::mpsc::UnboundedSender<csv_agent_core::bus::Command>,
+        sender: tokio::sync::mpsc::UnboundedSender<data_relay_core::bus::Command>,
     }
 
     pub struct PowerNotifications {
@@ -121,14 +121,14 @@ mod native {
             let context = unsafe { &*(context as *const ResumeContext) };
             let _ = context
                 .sender
-                .send(csv_agent_core::bus::Command::SystemResumed);
+                .send(data_relay_core::bus::Command::SystemResumed);
         }
         0
     }
 
     impl PowerNotifications {
         pub fn register(
-            sender: tokio::sync::mpsc::UnboundedSender<csv_agent_core::bus::Command>,
+            sender: tokio::sync::mpsc::UnboundedSender<data_relay_core::bus::Command>,
         ) -> anyhow::Result<Self> {
             let mut context = Box::new(ResumeContext { sender });
             let parameters = DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS {

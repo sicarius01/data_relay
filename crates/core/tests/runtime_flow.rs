@@ -1,4 +1,4 @@
-use csv_agent_core::{
+use data_relay_core::{
     bus::{Command, StatusSnapshot, UploaderState},
     config::{Config, WatchConfig},
     paths::AppPaths,
@@ -252,7 +252,7 @@ async fn same_state_directory_cannot_be_started_twice() {
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_pattern_reload_and_manual_task_capture() {
-    use csv_agent_core::config::TaskConfig;
+    use data_relay_core::config::TaskConfig;
     let temp = tempfile::tempdir().unwrap();
     let (mut cfg, paths, source) = fixture(temp.path());
     cfg.watch.clear();

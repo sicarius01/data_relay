@@ -1,4 +1,4 @@
-use csv_agent_core::config::{self, Config};
+use data_relay_core::config::{self, Config};
 use tokio::sync::oneshot;
 
 /// A successful probe belongs to the exact input that produced it. Changing

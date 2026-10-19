@@ -70,7 +70,7 @@ pub fn run() -> anyhow::Result<()> {
         // no HWND. Detach that console as well before allocating a visible one.
         let _ = FreeConsole();
         AllocConsole().context("cannot open test console")?;
-        SetConsoleTitleW(w!("CSV 수집 에이전트 - 테스트 실행"))?;
+        SetConsoleTitleW(w!("data_relay - 테스트 실행"))?;
     }
     let output = OpenOptions::new().write(true).open("CONOUT$")?;
     ready.write_all(b"READY\n")?;

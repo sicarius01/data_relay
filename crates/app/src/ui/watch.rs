@@ -1,5 +1,5 @@
 use super::*;
-use csv_agent_core::{
+use data_relay_core::{
     bus::UploaderState,
     config::{HeaderMode, WatchConfig},
 };
@@ -181,7 +181,7 @@ impl AgentApp {
                             .iter()
                             .filter(|watch| watch.enabled)
                             .filter_map(|watch| {
-                                csv_agent_core::paths::CompiledPattern::new(watch).ok()
+                                data_relay_core::paths::CompiledPattern::new(watch).ok()
                             })
                             .collect();
                         egui::ScrollArea::vertical()
@@ -275,6 +275,7 @@ impl AgentApp {
         ui.add_space(12.0);
         ui.heading(format!("감시 파일 {}개", snapshot.files.len()));
         use egui_extras::{Column, TableBuilder};
+        let mut reset = None;
         TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -284,10 +285,18 @@ impl AgentApp {
             .column(Column::initial(110.0))
             .column(Column::auto())
             .column(Column::auto())
+            .column(Column::auto())
             .max_scroll_height(280.0)
             .header(24.0, |mut header| {
-                for label in ["경로", "크기", "offset", "진행률", "마지막 처리", "헤더"]
-                {
+                for label in [
+                    "경로",
+                    "크기",
+                    "offset",
+                    "진행률",
+                    "마지막 처리",
+                    "헤더",
+                    "초기화",
+                ] {
                     header.col(|ui| {
                         ui.strong(label);
                     });
@@ -338,26 +347,38 @@ impl AgentApp {
                     row.col(|ui| {
                         ui.label(file.header_kind.map(|kind| kind.as_str()).unwrap_or("—"));
                     });
+                    row.col(|ui| {
+                        if ui
+                            .add_enabled(file.present, egui::Button::new("offset 리셋").small())
+                            .on_hover_text("이 파일을 처음부터 다시 업로드합니다.")
+                            .on_disabled_hover_text("현재 파일을 찾지 못해 다시 보낼 수 없습니다.")
+                            .clicked()
+                        {
+                            reset = Some(Confirm::Reset {
+                                key: file.file_key.clone(),
+                                path: file.path.display().to_string(),
+                            });
+                        }
+                    });
                 })
             });
+        // A missing source has nothing to re-send, so a full reset covers present files only.
+        let present: Vec<String> = snapshot
+            .files
+            .iter()
+            .filter(|file| file.present)
+            .map(|file| file.file_key.clone())
+            .collect();
         if ui
-            .add_enabled(
-                self.selected_file.is_some(),
-                egui::Button::new("선택 파일 offset 리셋…"),
-            )
+            .add_enabled(!present.is_empty(), egui::Button::new("전체 offset 리셋…"))
+            .on_hover_text("감시 중인 모든 파일을 처음부터 다시 업로드합니다.")
             .clicked()
         {
-            if let Some(file) = snapshot
-                .files
-                .iter()
-                .find(|file| Some(&file.file_key) == self.selected_file.as_ref())
-            {
-                self.confirm = Some(Confirm::Reset {
-                    key: file.file_key.clone(),
-                    path: file.path.display().to_string(),
-                });
-                self.focus_cancel = true;
-            }
+            reset = Some(Confirm::ResetAll { keys: present });
+        }
+        if let Some(confirm) = reset {
+            self.confirm = Some(confirm);
+            self.focus_cancel = true;
         }
     }
 }

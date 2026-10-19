@@ -8,9 +8,9 @@ use crate::{
     platform,
     tray::Tray,
 };
-use csv_agent_core::{
+use data_relay_core::{
     bus::{Command, StatusSnapshot},
-    config::{self, Config},
+    config::{self, Config, ConfigLoad},
     paths::AppPaths,
     runtime::AgentHandle,
     state::TaskRun,
@@ -27,6 +27,8 @@ enum Tab {
 enum Confirm {
     Exit,
     Reset { key: String, path: String },
+    ResetAll { keys: Vec<String> },
+    Reload,
     Error(String),
 }
 
@@ -82,7 +84,7 @@ impl AgentApp {
                 None
             }
         };
-        if let Err(error) = csv_agent_core::win::set_autostart(config.agent.autostart) {
+        if let Err(error) = data_relay_core::win::set_autostart(config.agent.autostart) {
             notice = format!("자동 시작 등록 실패: {error}");
         }
         Ok(Self {
@@ -152,9 +154,7 @@ impl AgentApp {
             )));
             return;
         }
-        let needs_restart = self.applied.agent.spool_dir != self.draft.agent.spool_dir
-            || self.applied.log.dir != self.draft.log.dir
-            || self.applied.log.max_files != self.draft.log.max_files;
+        let needs_restart = self.needs_restart(&self.draft);
         if let Some(handle) = &self.handle {
             if let Err(error) = handle.send(Command::ReloadConfig(self.draft.clone())) {
                 self.confirm = Some(Confirm::Error(format!(
@@ -168,6 +168,73 @@ impl AgentApp {
             "저장했습니다. 스풀 경로 / 로그 경로 / 로그 보관 수 변경은 재시작 후 적용됩니다."
         } else {
             "저장하고 실행 중인 에이전트에 적용했습니다."
+        }
+        .into();
+    }
+
+    fn needs_restart(&self, next: &Config) -> bool {
+        self.applied.agent.spool_dir != next.agent.spool_dir
+            || self.applied.log.dir != next.log.dir
+            || self.applied.log.max_files != next.log.max_files
+    }
+
+    /// Re-reads config.toml (edited outside the app) and applies it like a save.
+    fn reload_from_file(&mut self) {
+        let path = &self.paths.config;
+        // load() returns defaults for a missing file; never apply those silently.
+        if !path.exists() {
+            self.confirm = Some(Confirm::Error(format!(
+                "설정 파일이 없습니다. 현재 설정을 유지합니다.\n{}",
+                path.display()
+            )));
+            return;
+        }
+        let config = match config::load(path) {
+            Ok(ConfigLoad::Loaded { config, errors }) if errors.is_empty() => config,
+            Ok(ConfigLoad::Loaded { config, errors }) => {
+                self.draft = config;
+                self.selected_task = None;
+                self.selected_watch = None;
+                self.confirm = Some(Confirm::Error(format!(
+                    "파일을 불러왔지만 설정 오류가 있어 적용하지 않았습니다. 화면에서 고친 뒤 저장 및 적용을 누르세요.\n{}",
+                    errors
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )));
+                return;
+            }
+            Ok(ConfigLoad::Broken { err }) => {
+                self.confirm = Some(Confirm::Error(format!(
+                    "설정 파일 형식이 잘못되어 현재 설정을 유지합니다.\n{err}"
+                )));
+                return;
+            }
+            Err(error) => {
+                self.confirm = Some(Confirm::Error(format!(
+                    "설정 파일을 읽지 못해 현재 설정을 유지합니다: {error:#}"
+                )));
+                return;
+            }
+        };
+        let needs_restart = self.needs_restart(&config);
+        if let Some(handle) = &self.handle {
+            if let Err(error) = handle.send(Command::ReloadConfig(config.clone())) {
+                self.confirm = Some(Confirm::Error(format!(
+                    "설정 파일을 읽었지만 실행 중인 에이전트에 적용하지 못했습니다: {error}"
+                )));
+                return;
+            }
+        }
+        self.applied = config.clone();
+        self.draft = config;
+        self.selected_task = None;
+        self.selected_watch = None;
+        self.notice = if needs_restart {
+            "파일에서 다시 읽어 적용했습니다. 스풀 경로 / 로그 경로 / 로그 보관 수 변경은 재시작 후 적용됩니다."
+        } else {
+            "파일에서 다시 읽어 실행 중인 에이전트에 적용했습니다."
         }
         .into();
     }
@@ -222,7 +289,7 @@ impl AgentApp {
             ui.set_width(440.0);
             match &confirm {
                 Confirm::Exit => {
-                    ui.heading("CSV 수집 에이전트를 종료할까요?");
+                    ui.heading("data_relay를 종료할까요?");
                     ui.add_space(12.0);
                     ui.label("종료하면 데이터 수집이 중단됩니다.");
                     if !self.applied.ui.exit_confirm_message.is_empty() {
@@ -241,6 +308,25 @@ impl AgentApp {
                     ui.label(path);
                     ui.label("저장된 offset이 0으로 바뀌며 기존 데이터가 중복 전송될 수 있습니다.");
                 }
+                Confirm::ResetAll { keys } => {
+                    ui.heading("모든 파일을 처음부터 다시 업로드할까요?");
+                    ui.label(format!(
+                        "감시 중인 파일 {}개의 offset이 0으로 바뀝니다.",
+                        keys.len()
+                    ));
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        "이미 전송한 데이터가 모두 다시 전송됩니다. 파일이 크면 시간이 걸립니다.",
+                    );
+                }
+                Confirm::Reload => {
+                    ui.heading("설정 파일을 다시 읽어 적용할까요?");
+                    ui.label(self.paths.config.display().to_string());
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        "화면에서 저장하지 않은 설정 변경은 사라집니다.",
+                    );
+                }
                 Confirm::Error(error) => {
                     ui.heading("확인 필요");
                     ui.label(error);
@@ -250,10 +336,11 @@ impl AgentApp {
             ui.horizontal(|ui| {
                 if !matches!(&confirm, Confirm::Error(_))
                     && ui
-                        .button(if matches!(&confirm, Confirm::Exit) {
-                            "종료"
-                        } else {
-                            "offset 리셋"
+                        .button(match &confirm {
+                            Confirm::Exit => "종료",
+                            Confirm::Reload => "다시 읽기",
+                            Confirm::ResetAll { .. } => "전체 리셋",
+                            _ => "offset 리셋",
                         })
                         .clicked()
                 {
@@ -284,6 +371,14 @@ impl AgentApp {
                     }
                 }
                 Confirm::Reset { key, .. } => self.command(Command::ResetOffset(key)),
+                Confirm::ResetAll { keys } => {
+                    let count = keys.len();
+                    for key in keys {
+                        self.command(Command::ResetOffset(key));
+                    }
+                    self.notice = format!("파일 {count}개를 처음부터 다시 업로드합니다.");
+                }
+                Confirm::Reload => self.reload_from_file(),
                 Confirm::Error(_) => {}
             }
         } else if !close && !response.should_close() {
@@ -347,19 +442,19 @@ impl eframe::App for AgentApp {
         egui::TopBottomPanel::top("navigation").show(context, |ui| {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.heading("CSV 수집 에이전트");
+                ui.heading("data_relay");
                 if let Some(snapshot) = &snapshot {
                     let pending = status::connection_settings_pending(&self.draft, &self.applied);
                     let (label, color) = if pending {
                         ("설정 저장 필요", ui.visuals().warn_fg_color)
                     } else { match snapshot.tray {
-                        csv_agent_core::bus::TrayState::Ok => {
+                        data_relay_core::bus::TrayState::Ok => {
                             ("정상", egui::Color32::from_rgb(35, 169, 114))
                         }
-                        csv_agent_core::bus::TrayState::Pending => {
+                        data_relay_core::bus::TrayState::Pending => {
                             ("전송 대기", egui::Color32::from_rgb(220, 162, 38))
                         }
-                        csv_agent_core::bus::TrayState::Error => {
+                        data_relay_core::bus::TrayState::Error => {
                             (if !snapshot.config_errors.is_empty() { "적용된 설정 확인 필요" }
                                 else if !snapshot.watch_errors.is_empty() { "감시 경로 확인 필요" }
                                 else { "전송 재시도 중단" }, egui::Color32::from_rgb(230, 89, 95))
@@ -386,7 +481,7 @@ impl eframe::App for AgentApp {
                 for error in &snapshot.watch_errors {
                     ui.colored_label(egui::Color32::LIGHT_RED, format!("감시 경로 {}: {}", error.pattern, error.reason));
                 }
-                if matches!(snapshot.uploader, csv_agent_core::bus::UploaderState::Suspended) {
+                if matches!(snapshot.uploader, data_relay_core::bus::UploaderState::Suspended) {
                     let reason = snapshot.last_error.as_ref().map(|error| error.message.as_str()).unwrap_or("전송이 반복 실패했습니다.");
                     ui.colored_label(egui::Color32::LIGHT_RED, format!("전송 재시도 중단: {reason}"));
                 }
@@ -418,6 +513,18 @@ impl eframe::App for AgentApp {
                     self.selected_task = None;
                     self.selected_watch = None;
                     self.notice = "저장된 설정으로 되돌렸습니다.".into();
+                }
+                if ui
+                    .add_enabled(!self.shutting_down, egui::Button::new("파일에서 다시 읽기"))
+                    .on_hover_text("config.toml을 직접 고친 뒤 눌러 다시 읽고 적용합니다.")
+                    .clicked()
+                {
+                    if dirty {
+                        self.confirm = Some(Confirm::Reload);
+                        self.focus_cancel = true;
+                    } else {
+                        self.reload_from_file();
+                    }
                 }
                 if dirty {
                     ui.label("저장하지 않은 변경");
